@@ -1,0 +1,10 @@
+[package]
+name = "Sentineld"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-web = "4.12.1"
+arc-swap = "1.8.0"
+sysinfo = "0.38.0"
+tokio = "1.49.0"
