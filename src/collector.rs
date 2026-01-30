@@ -6,6 +6,7 @@ use sysinfo::{System, Disks};
 use std::time::Instant;
 
 pub fn start_collector(
+    interval_seconds: u64,
     cpu_gauge: Gauge,
     memory_used_gauge: Gauge,
     memory_total_gauge: Gauge,
@@ -23,7 +24,7 @@ pub fn start_collector(
     let mut time = Instant::now();
 
     task::spawn(async move {
-        let mut interval = interval(Duration::from_secs(4));
+        let mut interval = interval(Duration::from_secs(interval_seconds));
         loop {
             interval.tick().await;
             system.refresh_cpu_usage();

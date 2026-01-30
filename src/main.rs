@@ -11,15 +11,23 @@ use prometheus::{Gauge, Registry, Opts, Counter};
 
 use serde_yml;
 
+mod config;
+use config::Config;
 
+use std::fs::File;
 
 mod collector;
 
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
+    let mut config = Config::default();
+    if let Ok(config_file) = File::open("config.yml") {
+        if let Ok(config_data) = serde_yml::from_reader(config_file) {
+            config = config_data;
+        }
+    }
 
     let cpu_gauge = Gauge::new("sentinel_cpu_usage_percent", "CPU usage in percentage").unwrap();
-    let cpu_gauge_clone = cpu_gauge.clone();
     
     let memory_used_gauge = Gauge::new("sentinel_memory_used_bytes", "Memory used in bytes").unwrap();
     let memory_total_gauge = Gauge::new("sentinel_memory_total_bytes", "Memory total in bytes").unwrap();
@@ -35,7 +43,9 @@ async fn main() -> Result<(), std::io::Error> {
     let agent_errors_counter_opts = Opts::new("sentinel_agent_errors_count", "Number of errors during collection");
     let agent_errors_counter = Counter::with_opts(agent_errors_counter_opts).unwrap();
 
-    let collector_task = collector::start_collector(cpu_gauge_clone,
+    let collector_task = collector::start_collector(
+        config.collection_interval,
+        cpu_gauge.clone(),
         memory_used_gauge.clone(),
         memory_total_gauge.clone(),
         memory_free_gauge.clone(),
@@ -64,7 +74,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(health_handler)
             .service(cpu_handler)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind((config.host.as_str(), config.port))?
     .run()
     .await?;
     Ok(())
