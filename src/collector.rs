@@ -8,6 +8,7 @@ use sysinfo::{System, Disks};
 use crate::config::Config;
 use arc_swap::ArcSwap;
 use crate::snapshot::Snapshot;
+use tokio_util::sync::CancellationToken;
 
 
 pub struct SystemCollector {
@@ -33,23 +34,36 @@ impl SystemCollector {
         }
     }
 
-    pub fn start(mut self) -> JoinHandle<()> {
+    pub fn start(mut self, shutdown_signal: CancellationToken) -> JoinHandle<()> {
         task::spawn(async move {
             self.start_time = Instant::now();
-            let mut delay ;
+            let mut interval_secs = {
+                let config = self.config.load();
+                config.collection.interval
+            };
+            let mut delay = interval(Duration::from_secs(interval_secs));
             self.system.refresh_all();
             loop {
-                {
-                    let config = self.config.load();
-                    delay = interval(Duration::from_secs(config.collection.interval));
+                let config = self.config.load();
+                if config.collection.interval != interval_secs {
+                    interval_secs = config.collection.interval;
+                    delay = interval(Duration::from_secs(interval_secs));
                 }
-                self.collect();
-                delay.tick().await;
+                tokio::select! {
+                    _ = delay.tick() => {
+                        self.collect();
+                    }
+                    _ = shutdown_signal.cancelled() => {
+                        tracing::info!("Shutting down system collector");
+                        break;
+                    }
+                }
             }
         })
     }
 
     fn collect(&mut self) {
+        tracing::info!("Collecting system metrics");
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
         self.disks.refresh(true);

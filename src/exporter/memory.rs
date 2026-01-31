@@ -6,6 +6,7 @@ use arc_swap::ArcSwap;
 use crate::exporter::MetricsExporter;
 use crate::snapshot::Snapshot;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 pub struct MemoryExporter {
     snapshot: Arc<ArcSwap<Snapshot>>,
     memory_used_gauge: Gauge,
@@ -15,18 +16,31 @@ pub struct MemoryExporter {
 }
 
 impl MetricsExporter for MemoryExporter {
-    fn start(self) -> JoinHandle<()> {
+    fn start(self, shutdown_signal: CancellationToken) -> JoinHandle<()> {
        tokio::spawn(async move {
-        let mut delay;
         let mut memory_enabled;
+        let mut interval_secs = {
+            let config = self.config.load();
+            config.exporter.memory_interval
+        };
+        let mut delay = interval(Duration::from_secs(interval_secs));
         loop {
-            {
-                let config = self.config.load();
-                delay = interval(Duration::from_secs(config.exporter.memory_interval));
-                memory_enabled = config.metrics.memory;
+            let config = self.config.load();
+            memory_enabled = config.metrics.memory;
+            if config.exporter.memory_interval != interval_secs {
+                interval_secs = config.exporter.memory_interval;
+                delay = interval(Duration::from_secs(interval_secs));
             }
-            self.export(memory_enabled);
-            delay.tick().await;
+
+            tokio::select! {
+                _ = delay.tick() => {
+                    self.export(memory_enabled);
+                }
+                _ = shutdown_signal.cancelled() => {
+                    tracing::info!("Shutting down memory exporter");
+                    break;
+                }
+            }
         }
        })
     }
@@ -44,6 +58,7 @@ impl MemoryExporter {
     }
 
     fn export(&self, memory_enabled: bool) {
+        tracing::info!("Exporting memory metrics");
         if memory_enabled {
             let snapshot = self.snapshot.load();
             self.memory_used_gauge.set(snapshot.memory_used);

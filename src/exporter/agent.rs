@@ -6,6 +6,7 @@ use arc_swap::ArcSwap;
 use crate::exporter::MetricsExporter;
 use crate::snapshot::Snapshot;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 pub struct AgentExporter {
     snapshot: Arc<ArcSwap<Snapshot>>,
     agent_uptime_gauge: Gauge,
@@ -14,18 +15,30 @@ pub struct AgentExporter {
 }
 
 impl MetricsExporter for AgentExporter {
-    fn start(self) -> JoinHandle<()> {
+    fn start(self, shutdown_signal: CancellationToken) -> JoinHandle<()> {
        tokio::spawn(async move {
-        let mut delay;
         let mut agent_enabled;
+        let mut interval_secs = {
+            let config = self.config.load();
+            config.exporter.agent_interval
+        };
+        let mut delay = interval(Duration::from_secs(interval_secs));
         loop {
-            {
-                let config = self.config.load();
-                delay = interval(Duration::from_secs(config.exporter.agent_interval));
-                agent_enabled = config.metrics.agent;
+            let config = self.config.load();
+            agent_enabled = config.metrics.agent;
+            if config.exporter.agent_interval != interval_secs {
+                interval_secs = config.exporter.agent_interval;
+                delay = interval(Duration::from_secs(interval_secs));
             }
-            self.export(agent_enabled);
-            delay.tick().await;
+            tokio::select! {
+                _ = delay.tick() => {
+                    self.export(agent_enabled);
+                }
+                _ = shutdown_signal.cancelled() => {
+                    tracing::info!("Shutting down agent exporter");
+                    break;
+                }
+            }
         }
        })
     }
@@ -42,6 +55,7 @@ impl AgentExporter {
     }
 
     fn export(&self, agent_enabled: bool) {
+        tracing::info!("Exporting agent metrics");
         if agent_enabled {
             let snapshot = self.snapshot.load();
             self.agent_uptime_gauge.set(snapshot.agent_uptime);

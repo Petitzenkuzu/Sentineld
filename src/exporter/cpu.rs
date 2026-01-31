@@ -6,6 +6,7 @@ use arc_swap::ArcSwap;
 use crate::exporter::MetricsExporter;
 use crate::snapshot::Snapshot;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 pub struct CpuExporter {
     snapshot: Arc<ArcSwap<Snapshot>>,
     cpu_gauge: Gauge,
@@ -13,18 +14,30 @@ pub struct CpuExporter {
 }
 
 impl MetricsExporter for CpuExporter {
-    fn start(self) -> JoinHandle<()> {
+    fn start(self, shutdown_signal: CancellationToken) -> JoinHandle<()> {
        tokio::spawn(async move {
-        let mut delay;
         let mut cpu_enabled;
+        let mut interval_secs = {
+            let config = self.config.load();
+            config.exporter.cpu_interval
+        };
+        let mut delay = interval(Duration::from_secs(interval_secs));
         loop {
-            {
-                let config = self.config.load();
-                delay = interval(Duration::from_secs(config.exporter.cpu_interval));
-                cpu_enabled = config.metrics.cpu;
+            let config = self.config.load();
+            cpu_enabled = config.metrics.cpu;
+            if config.exporter.cpu_interval != interval_secs {
+                interval_secs = config.exporter.cpu_interval;
+                delay = interval(Duration::from_secs(interval_secs));
             }
-            self.export(cpu_enabled);
-            delay.tick().await;
+            tokio::select! {
+                _ = delay.tick() => {
+                    self.export(cpu_enabled);
+                }
+                _ = shutdown_signal.cancelled() => {
+                    tracing::info!("Shutting down CPU exporter");
+                    break;
+                }
+            }
         }
        })
     }
@@ -40,6 +53,7 @@ impl CpuExporter {
     }
 
     fn export(&self, cpu_enabled: bool) {
+        tracing::info!("Exporting CPU metrics");
         if cpu_enabled {
             let snapshot = self.snapshot.load();
             self.cpu_gauge.set(snapshot.cpu_usage);

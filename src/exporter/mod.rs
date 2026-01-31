@@ -1,9 +1,10 @@
 use arc_swap::ArcSwap;
 use crate::config::Config;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 pub trait MetricsExporter {
-    fn start(self) -> JoinHandle<()>;
+    fn start(self, shutdown_signal: CancellationToken) -> JoinHandle<()>;
 }
 
 mod cpu;

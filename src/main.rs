@@ -33,14 +33,45 @@ use arc_swap::ArcSwap;
 
 use std::sync::Arc;
 
+mod signals;
+#[cfg(target_os = "linux")]
+use signals::linux::start_signals_handler;
+#[cfg(target_os = "windows")]
+use signals::windows::start_signals_handler;
+
+use tracing_subscriber::FmtSubscriber;
+use tracing::Level;
+use tokio_util::sync::CancellationToken;
+use std::path::PathBuf;
+mod watcher;
+use watcher::start_config_watcher;
+
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("setting default subscriber failed");
+
+    tracing::info!("Starting Sentineld");
+
+    let config_path = if let Ok(path) = std::env::var("SENTINELD_CONFIG") {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from("./config.yml")
+    };
+
     let config = Arc::new(ArcSwap::new(Arc::new(Config::default())));
-    if let Ok(config_file) = File::open("config.yml") {
-        if let Ok(config_data) = serde_yml::from_reader(config_file) {
+    if let Ok(config_file) = File::open(&config_path) {
+        if let Ok(config_data) = serde_yml::from_reader(&config_file) {
             config.store(Arc::new(config_data));
         }
     }
+
+    let shutdown_signal = CancellationToken::new();
+    start_signals_handler(shutdown_signal.clone());
 
     let cpu_gauge = Gauge::new("sentinel_cpu_usage_percent", "CPU usage in percentage").unwrap();
     
@@ -57,6 +88,8 @@ async fn main() -> Result<(), std::io::Error> {
     let agent_errors_counter_opts = Opts::new("sentinel_agent_errors_count", "Number of errors during collection");
     let agent_errors_counter = Counter::with_opts(agent_errors_counter_opts).unwrap();
 
+    start_config_watcher(config.clone(), config_path, shutdown_signal.clone(), agent_errors_counter.clone());
+
     let snapshot = Arc::new(ArcSwap::new(Arc::new(Snapshot::default())));
     let system_collector = SystemCollector::new(config.clone(), snapshot.clone());
     let cpu_exporter = CpuExporter::new(config.clone(), cpu_gauge.clone(), snapshot.clone());
@@ -64,12 +97,12 @@ async fn main() -> Result<(), std::io::Error> {
     let disk_exporter = DiskExporter::new(config.clone(), disk_total_gauge.clone(), disk_free_gauge.clone(), disk_used_gauge.clone(), snapshot.clone());
     let agent_exporter = AgentExporter::new(config.clone(), agent_uptime_gauge.clone(), agent_errors_counter.clone(), snapshot.clone());
 
-    let tasks = vec![
-        system_collector.start(),
-        cpu_exporter.start(),
-        memory_exporter.start(),
-        disk_exporter.start(),
-        agent_exporter.start(),
+    let _tasks = vec![
+        system_collector.start(shutdown_signal.clone()),
+        cpu_exporter.start(shutdown_signal.clone()),
+        memory_exporter.start(shutdown_signal.clone()),
+        disk_exporter.start(shutdown_signal.clone()),
+        agent_exporter.start(shutdown_signal.clone()),
     ];
 
     let registry = Registry::default();
@@ -92,6 +125,7 @@ async fn main() -> Result<(), std::io::Error> {
             .service(health_handler)
             .service(cpu_handler)
     })
+    .workers(2)
     .bind((host.as_str(), port))?
     .run()
     .await?;
