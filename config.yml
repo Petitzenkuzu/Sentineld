@@ -1,7 +1,14 @@
 port: 8080
 host: '0.0.0.0'
-collection_interval: 5
+exporter:
+  cpu_interval: 5
+  memory_interval: 5
+  disk_interval: 5
+  agent_interval: 5
 metrics:
   cpu: true
   memory: true
   disk: true
+  agent: true
+collection:
+  interval: 5

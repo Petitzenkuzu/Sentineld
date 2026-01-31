@@ -16,14 +16,29 @@ use config::Config;
 
 use std::fs::File;
 
+mod exporter;
+use exporter::CpuExporter;
+use exporter::MemoryExporter;
+use exporter::DiskExporter;
+use exporter::MetricsExporter;
+use exporter::AgentExporter;
+
+mod snapshot;
+use snapshot::Snapshot;
+
 mod collector;
+use collector::SystemCollector;
+
+use arc_swap::ArcSwap;
+
+use std::sync::Arc;
 
 #[actix_web::main]
 async fn main() -> Result<(), std::io::Error> {
-    let mut config = Config::default();
+    let config = Arc::new(ArcSwap::new(Arc::new(Config::default())));
     if let Ok(config_file) = File::open("config.yml") {
         if let Ok(config_data) = serde_yml::from_reader(config_file) {
-            config = config_data;
+            config.store(Arc::new(config_data));
         }
     }
 
@@ -37,44 +52,47 @@ async fn main() -> Result<(), std::io::Error> {
     let disk_free_gauge = Gauge::new("sentinel_disk_free_bytes", "Disk free in bytes").unwrap();
     let disk_used_gauge = Gauge::new("sentinel_disk_used_bytes", "Disk used in bytes").unwrap();
 
-    let agent_uptime_counter_opts = Opts::new("sentinel_agent_uptime_seconds", "Agent uptime in seconds");
-    let agent_uptime_counter = Counter::with_opts(agent_uptime_counter_opts).unwrap();
+    let agent_uptime_gauge = Gauge::new("sentinel_agent_uptime_seconds", "Agent uptime in seconds").unwrap();
 
     let agent_errors_counter_opts = Opts::new("sentinel_agent_errors_count", "Number of errors during collection");
     let agent_errors_counter = Counter::with_opts(agent_errors_counter_opts).unwrap();
 
-    let collector_task = collector::start_collector(
-        config.collection_interval,
-        cpu_gauge.clone(),
-        memory_used_gauge.clone(),
-        memory_total_gauge.clone(),
-        memory_free_gauge.clone(),
-        disk_total_gauge.clone(),
-        disk_free_gauge.clone(),
-        disk_used_gauge.clone(),
-        agent_uptime_counter.clone(),
-    );
+    let snapshot = Arc::new(ArcSwap::new(Arc::new(Snapshot::default())));
+    let system_collector = SystemCollector::new(config.clone(), snapshot.clone());
+    let cpu_exporter = CpuExporter::new(config.clone(), cpu_gauge.clone(), snapshot.clone());
+    let memory_exporter = MemoryExporter::new(config.clone(), memory_used_gauge.clone(), memory_total_gauge.clone(), memory_free_gauge.clone(), snapshot.clone());
+    let disk_exporter = DiskExporter::new(config.clone(), disk_total_gauge.clone(), disk_free_gauge.clone(), disk_used_gauge.clone(), snapshot.clone());
+    let agent_exporter = AgentExporter::new(config.clone(), agent_uptime_gauge.clone(), agent_errors_counter.clone(), snapshot.clone());
+
+    let tasks = vec![
+        system_collector.start(),
+        cpu_exporter.start(),
+        memory_exporter.start(),
+        disk_exporter.start(),
+        agent_exporter.start(),
+    ];
 
     let registry = Registry::default();
-    registry.register(Box::new(cpu_gauge)).unwrap();
-    registry.register(Box::new(memory_used_gauge)).unwrap();
-    registry.register(Box::new(memory_total_gauge)).unwrap();
-    registry.register(Box::new(memory_free_gauge)).unwrap();
-    registry.register(Box::new(disk_total_gauge)).unwrap();
-    registry.register(Box::new(disk_free_gauge)).unwrap();
-    registry.register(Box::new(disk_used_gauge)).unwrap();
-    registry.register(Box::new(agent_uptime_counter)).unwrap();
-    registry.register(Box::new(agent_errors_counter)).unwrap();
-
+    registry.register(Box::new(cpu_gauge)).expect("Failed to register CPU gauge");
+    registry.register(Box::new(memory_used_gauge)).expect("Failed to register Memory used gauge");
+    registry.register(Box::new(memory_total_gauge)).expect("Failed to register Memory total gauge");
+    registry.register(Box::new(memory_free_gauge)).expect("Failed to register Memory free gauge");
+    registry.register(Box::new(disk_total_gauge)).expect("Failed to register Disk total gauge");
+    registry.register(Box::new(disk_free_gauge)).expect("Failed to register Disk free gauge");
+    registry.register(Box::new(disk_used_gauge)).expect("Failed to register Disk used gauge");
+    registry.register(Box::new(agent_uptime_gauge)).expect("Failed to register Agent uptime gauge");
+    registry.register(Box::new(agent_errors_counter)).expect("Failed to register Agent errors counter");
+    
     let state = web::Data::new(State::new(registry));
-
+    let host = config.load().host.clone();
+    let port = config.load().port;
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .service(health_handler)
             .service(cpu_handler)
     })
-    .bind((config.host.as_str(), config.port))?
+    .bind((host.as_str(), port))?
     .run()
     .await?;
     Ok(())
