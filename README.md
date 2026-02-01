@@ -34,6 +34,7 @@ After=network.target
 Type=simple
 User=sentinel
 WorkingDirectory=/opt/sentineld
+Environment=SENTINELD_CONFIG=/opt/sentineld/config.yml
 ExecStart=/opt/sentineld/sentineld --config /opt/sentineld/config.yml
 Restart=on-failure
 RestartSec=3
@@ -116,6 +117,7 @@ After=network.target
 Type=simple
 User=sentinel
 WorkingDirectory=/opt/sentineld
+Environment=SENTINELD_CONFIG=/opt/sentineld/config.yml
 ExecStart=/opt/sentineld/sentineld --config /opt/sentineld/config.yml
 Restart=on-failure
 RestartSec=3
