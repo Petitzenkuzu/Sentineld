@@ -7,6 +7,7 @@
 - Collects CPU, memory, disk, and agent uptime metrics.
 - Serves HTTP endpoints: `/metrics` for Prometheus and `/health` for a simple health check.
 - Supports hot reload of `config.yml` (keeps the last valid config if reload fails and increments the error counter).
+- Designed to run as a long-lived daemon/service.
 
 ### How to use it
 By default, the agent reads `./config.yml`. You can override the path with the `SENTINELD_CONFIG` environment variable.
@@ -20,6 +21,33 @@ $env:SENTINELD_CONFIG="C:\path\to\config.yml"
 Linux/macOS example:
 ```
 SENTINELD_CONFIG=/path/to/config.yml ./sentineld
+```
+
+### Run as a daemon (systemd)
+Example unit file (`/etc/systemd/system/sentineld.service`):
+```
+[Unit]
+Description=Sentineld daemon
+After=network.target
+
+[Service]
+Type=simple
+User=sentinel
+WorkingDirectory=/opt/sentineld
+ExecStart=/opt/sentineld/sentineld --config /opt/sentineld/config.yml
+Restart=on-failure
+RestartSec=3
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target
+```
+Enable and start:
+```
+sudo systemctl daemon-reload
+sudo systemctl enable sentineld
+sudo systemctl start sentineld
+sudo systemctl status sentineld
 ```
 
 ### Configuration
@@ -61,6 +89,7 @@ Prometheus metrics include (names are stable in code):
 - Collecte CPU, memoire, disque et uptime de l'agent.
 - Sert les endpoints HTTP: `/metrics` (Prometheus) et `/health` (health check).
 - Hot reload du `config.yml` (garde la derniere config valide si le reload echoue et incremente le compteur d'erreurs).
+- Concu pour tourner comme un daemon/service.
 
 ### Comment l'utiliser
 Par defaut, l'agent lit `./config.yml`. Tu peux surcharger le chemin avec la variable d'environnement `SENTINELD_CONFIG`.
@@ -74,6 +103,33 @@ $env:SENTINELD_CONFIG="C:\path\to\config.yml"
 Exemple Linux/macOS:
 ```
 SENTINELD_CONFIG=/path/to/config.yml ./sentineld
+```
+
+### Lancer en daemon (systemd)
+Exemple d'unite (`/etc/systemd/system/sentineld.service`):
+```
+[Unit]
+Description=Sentineld daemon
+After=network.target
+
+[Service]
+Type=simple
+User=sentinel
+WorkingDirectory=/opt/sentineld
+ExecStart=/opt/sentineld/sentineld --config /opt/sentineld/config.yml
+Restart=on-failure
+RestartSec=3
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target
+```
+Activer et demarrer:
+```
+sudo systemctl daemon-reload
+sudo systemctl enable sentineld
+sudo systemctl start sentineld
+sudo systemctl status sentineld
 ```
 
 ### Configuration
