@@ -12,7 +12,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            port: 8080,
+            port: 9100,
             host: "0.0.0.0".to_string(),
             exporter: ExporterConfig::default(),
             metrics: MetricsConfig::default(),

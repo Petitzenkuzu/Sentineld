@@ -1,4 +1,4 @@
-port: 8080
+port: 9100
 host: '0.0.0.0'
 exporter:
   cpu_interval: 5
