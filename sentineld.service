@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=sentinel
 WorkingDirectory=/opt/sentineld
-ExecStart=/opt/sentineld/sentineld --config /opt/sentineld/config.yml
+ExecStart=/opt/sentineld/Sentineld --config /opt/sentineld/config.yml
 Restart=on-failure
 RestartSec=3
 Environment=RUST_LOG=info
