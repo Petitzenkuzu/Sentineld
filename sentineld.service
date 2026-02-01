@@ -1,0 +1,22 @@
+[Unit]
+Description=Sentineld Rust daemon
+After=network.target
+
+[Service]
+Type=simple
+User=sentinel
+WorkingDirectory=/opt/sentineld
+ExecStart=/opt/sentineld/sentineld --config /opt/sentineld/config.yml
+Restart=on-failure
+RestartSec=3
+Environment=RUST_LOG=info
+
+# Sécurité de base
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sentineld
+
+[Install]
+WantedBy=multi-user.target
