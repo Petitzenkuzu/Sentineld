@@ -13,8 +13,7 @@ pub async fn cpu_handler(state: web::Data<State>) -> HttpResponse {
         return HttpResponse::InternalServerError().body(e.to_string());
     }
     if let Ok(s)     = String::from_utf8(buffer) {
-    println!("{}", s);
-    HttpResponse::Ok().body(s)
+    HttpResponse::Ok().content_type("text/plain; version=0.0.4; charset=utf-8").body(s)
     } else {
         HttpResponse::InternalServerError().body("Failed to convert encoded buffer to string")
     }
