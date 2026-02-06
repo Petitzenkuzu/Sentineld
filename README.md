@@ -75,6 +75,7 @@ Notes:
 - `exporter.*_interval` controls how often each metric family is exported.
 - `collection.interval` controls how often the system snapshot is refreshed.
 - `metrics.*` toggles each metric family on/off.
+- if the config file isn't correct it will automaticly create a new default config at the env variable address
 
 Prometheus metrics include (names are stable in code):
 - `sentinel_cpu_usage_percent`
@@ -158,6 +159,7 @@ Notes:
 - `exporter.*_interval` controle la frequence d'export des metriques.
 - `collection.interval` controle la frequence de refresh du snapshot systeme.
 - `metrics.*` active/desactive chaque famille de metriques.
+- si le fichier de config n'est pas correct un nouveau avec la config par défault sera créé à l'addresse indiqué par la variable d'environnement
 
 Metriques Prometheus exposees (noms stables dans le code):
 - `sentinel_cpu_usage_percent`

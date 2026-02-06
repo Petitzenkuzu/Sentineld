@@ -1,6 +1,5 @@
 use tokio::task::JoinHandle;
 use std::sync::Arc;
-use prometheus::{Gauge, Counter};
 use tokio::time::{Duration, interval};
 use tokio::task;
 use std::time::Instant;

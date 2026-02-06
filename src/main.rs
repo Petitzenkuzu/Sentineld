@@ -67,7 +67,11 @@ async fn main() -> Result<(), std::io::Error> {
     if let Ok(config_file) = File::open(&config_path) {
         if let Ok(config_data) = serde_yml::from_reader(&config_file) {
             config.store(Arc::new(config_data));
+        } else {
+            tracing::error!("Failed to parse config file");
         }
+    } else {
+        tracing::error!("Failed to open config file");
     }
 
     let shutdown_signal = CancellationToken::new();
